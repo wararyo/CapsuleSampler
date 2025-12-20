@@ -381,9 +381,11 @@ void Sampler::Process(int16_t* __restrict__ output)
 #if CONFIG_IDF_TARGET_ESP32S3
         // ESP32S3の場合はSIMD命令を使って高速化
         __asm__ (
-        "   loop            %2, LOOP_END            \n"     // ループ開始
-        "   ee.ldf.128.ip   f11,f10,f9, f8, %1, 16  \n"     // 元データ float 4個 読み、a3 アドレスを 16 加算
-        "   ee.ldf.128.ip   f15,f14,f13,f12,%1, 16  \n"     // 元データ float 4個 読み、a3 アドレスを 16 加算
+        "   mov             a11, %1                 \n"  // dataポインタをa11にコピー
+        "   beqz.n          %2, SAMPLER_LOOP_END    \n"
+        "   loop            %2, SAMPLER_LOOP_END    \n"     // ループ開始
+        "   ee.ldf.128.ip   f11,f10,f9, f8, a11, 16 \n"     // 元データ float 4個 読み、a11 アドレスを 16 加算
+        "   ee.ldf.128.ip   f15,f14,f13,f12,a11, 16 \n"     // 元データ float 4個 読み、a11 アドレスを 16 加算
         "   trunc.s         a12,f8, 0               \n"     // float 4個を int32_t 4個に変換する
         "   trunc.s         a14,f10,0               \n"     // trunc.s は int32_t の範囲に収まるよう桁溢れ防止が行われる。
         "   trunc.s         a13,f9, 0               \n"     //
@@ -405,15 +407,15 @@ void Sampler::Process(int16_t* __restrict__ output)
         "   s16i            a12,%0, 8               \n"     // 先ほど奇数indexの値を出力した場所に 16bit 化した偶数indexの値を出力して上書きする。
         "   s16i            a14,%0, 12              \n"     //
         "   addi            %0, %0, 16              \n"     //
-        "LOOP_END:                                  \n"     //
-        : // output-list 使用せず    // アセンブリ言語からC/C++への受渡しは無し
+        "SAMPLER_LOOP_END:                          \n"     //
+        : // output-list            // アセンブリ言語からC/C++への受渡しは無し
+            "+r" ( output )         //  %0 に変数 output の値を指定
         : // input-list             // C/C++からアセンブリ言語への受渡し
-            "r" ( output ),         //  %0 に変数 output の値を指定
             "r" ( data ),           //  %1 に変数 data の値を指定
             "r" ( SAMPLE_BUFFER_SIZE>>3 )  // %2 にバッファ長 / 8 の値を設定
         : // clobber-list           //  値を書き換えたレジスタの申告
             "f8","f9","f10","f11","f12","f13","f14","f15",
-            "a12","a13","a14","a15" //  書き変えたレジスタをコンパイラに知らせる
+            "a11","a12","a13","a14","a15","memory" //  書き変えたレジスタをコンパイラに知らせる
         );
 #else
         auto o = output;
