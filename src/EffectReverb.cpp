@@ -72,7 +72,7 @@ void EffectReverb::Init()
                     REVERB_DELAY_BASIS_ALL_0 +
                     REVERB_DELAY_BASIS_ALL_1 +
                     REVERB_DELAY_BASIS_ALL_2 +
-                    7 * 8) &
+                    15 * 8) &
                    ~0b11) *
                   sizeof(float);
 #if defined ( ESP_PLATFORM )
@@ -89,19 +89,19 @@ void EffectReverb::Init()
     // 各フィルター構造体の初期化 (バッファは16バイトアラインしておく)
     float *cursor = memory;
     combs[0] = feedback_filter_t{cursor, cursor, 0.805f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_COMB_0) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_COMB_0 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_COMB_0 + 15) & ~0b1111;
     combs[1] = feedback_filter_t{cursor, cursor, 0.827f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_COMB_1) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_COMB_1 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_COMB_1 + 15) & ~0b1111;
     combs[2] = feedback_filter_t{cursor, cursor, 0.783f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_COMB_2) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_COMB_2 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_COMB_2 + 15) & ~0b1111;
     combs[3] = feedback_filter_t{cursor, cursor, 0.764f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_COMB_3) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_COMB_3 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_COMB_3 + 15) & ~0b1111;
     allpasses[0] = feedback_filter_t{cursor, cursor, 0.7f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_ALL_0) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_ALL_0 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_ALL_0 + 15) & ~0b1111;
     allpasses[1] = feedback_filter_t{cursor, cursor, 0.7f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_ALL_1) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_ALL_1 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_ALL_1 + 15) & ~0b1111;
     allpasses[2] = feedback_filter_t{cursor, cursor, 0.7f, cursor + ((uint32_t)(time * REVERB_DELAY_BASIS_ALL_2) & ~0b11)};
-    cursor += (REVERB_DELAY_BASIS_ALL_2 + 7) & ~0b11;
+    cursor += (REVERB_DELAY_BASIS_ALL_2 + 15) & ~0b1111;
 
     bandpass = setup_bandpass_filter(sampleRate, 2000.0f, 1.0f);
 }
