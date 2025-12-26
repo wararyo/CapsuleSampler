@@ -136,7 +136,7 @@ void comb_filter_process(const float *input, float *output, struct feedback_filt
         remain >>= 2;
 #if CONFIG_IDF_TARGET_ESP32S3
         // ESP32S3の場合はSIMD命令を使って高速化
-        __asm__ (
+        __asm__ volatile (
         // f0 |   f1 - f4   |   f5 - f8   |  f9 - f12  |
         //  g | readback3-0 | outValue3-0 | inValue3-0 | 
         "   wfr             f0, %4                    \n" // f0 = g
@@ -248,7 +248,7 @@ void allpass_filter_process(const float *input, float *output, struct feedback_f
         remain >>= 2;
 #if CONFIG_IDF_TARGET_ESP32S3
         // ESP32S3の場合はSIMD命令を使って高速化
-        __asm__ (
+        __asm__ volatile (
         // f0 |   f1 - f4   |   f5 - f8   |
         //  g | readback3-0 | newValue3-0 |
         "   wfr             f0, %4                      \n" // f0 = g
@@ -338,7 +338,7 @@ void bandpass_filter_process(const float *input, float *output, struct biquad_fi
     len >>= 2;
 #if CONFIG_IDF_TARGET_ESP32S3
     // ESP32S3の場合はSIMD命令を使って高速化
-    __asm__ (
+    __asm__ volatile (
     //  f0 -- f1 | f2 -- f3 |  f4 - f5  | f6 - f7 |   f8   |   f9   |  f10  |  f11  | f12  |
     //   in_1-0  | in_m1-m2 | out_m1-m2 | out_1-0 | f_out2 | f_out1 | f_in2 | f_in1 | f_in |
     "   lsi             f12, %3, 16                  \n" // f12 = f_in

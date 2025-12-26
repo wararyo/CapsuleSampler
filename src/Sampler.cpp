@@ -380,7 +380,7 @@ void Sampler::Process(int16_t* __restrict__ output)
     { // 生成した波形をint16_tに変換して出力先に書き込む
 #if CONFIG_IDF_TARGET_ESP32S3
         // ESP32S3の場合はSIMD命令を使って高速化
-        __asm__ (
+        __asm__ volatile (
         "   mov             a11, %1                 \n"  // dataポインタをa11にコピー
         "   beqz.n          %2, SAMPLER_LOOP_END    \n"
         "   loop            %2, SAMPLER_LOOP_END    \n"     // ループ開始
