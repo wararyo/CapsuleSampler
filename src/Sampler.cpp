@@ -86,7 +86,7 @@ void Sampler::PitchBend(int16_t pitchBend, uint8_t channel)
 
 void Sampler::Channel::NoteOn(uint8_t noteNo, uint8_t velocity)
 {
-    LOGI("Sampler", "NoteOn : %2x, %2x\n", noteNo, velocity);
+    LOGD("Sampler", "NoteOn : %2x, %2x", noteNo, velocity);
     // 空いているPlayerを探し、そのPlayerにサンプルをセットする
     uint_fast8_t oldestPlayerId = 0;
     
@@ -120,7 +120,7 @@ void Sampler::Channel::NoteOn(uint8_t noteNo, uint8_t velocity)
 }
 void Sampler::Channel::NoteOff(uint8_t noteNo, uint8_t velocity)
 {
-    LOGI("Sampler", "NoteOff: %2x, %2x\n", noteNo, velocity);
+    LOGD("Sampler", "NoteOff: %2x, %2x", noteNo, velocity);
     
     // 弱参照からの共有ポインタ取得を試みる
     auto samplerPtr = sampler.lock();
