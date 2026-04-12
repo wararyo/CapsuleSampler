@@ -2,6 +2,9 @@
 #include <Sampler.h>
 #include <MidiMessage.h>
 #include <vector>
+#if !defined(ARDUINO) && !defined(M5UNIFIED_PC_BUILD)
+#include <esp_rom_sys.h>
+#endif
 
 #define ENABLE_PRINTING false
 
@@ -94,6 +97,9 @@ static constexpr const uint8_t SPK_CH = 1;
 #if defined ( M5UNIFIED_PC_BUILD )
 static int getCpuFrequencyMhz() { return 1; }
 #define PRO_CPU_NUM 0
+#elif !defined(ARDUINO)
+#include <esp_private/esp_clk.h>
+static int getCpuFrequencyMhz() { return esp_clk_cpu_freq() / 1000000; }
 #endif
 
 uint32_t process(Sampler& sampler, int16_t *output)
@@ -114,8 +120,13 @@ uint32_t process(Sampler& sampler, int16_t *output)
 #if ENABLE_PRINTING
   for (uint_fast16_t i; i < SAMPLE_BUFFER_SIZE; i++)
   {
+#if defined(ARDUINO)
     Serial.printf("%d,", output[i]);
     delayMicroseconds(100);
+#else
+    printf("%d,", output[i]);
+    esp_rom_delay_us(100);
+#endif
   }
 #else
   // 生成した音を鳴らす
@@ -160,8 +171,9 @@ uint32_t process(Sampler& sampler, int16_t *output)
 uint32_t benchmark(const std::shared_ptr<Sampler>& sampler, const MidiMessage *song)
 {
   // M5.Speakerに渡すバッファとして4つ用意する。(3個あればよいが循環処理をしやすくするため4個とした)
-  int16_t output[4][SAMPLE_BUFFER_SIZE] = {0};
+  static int16_t output[4][SAMPLE_BUFFER_SIZE] = {0};
   uint8_t buf_idx = 0;
+  memset(output, 0, sizeof(output));
 
   uint32_t cycle_count = 0;
 
@@ -228,7 +240,7 @@ uint32_t benchmark(const std::shared_ptr<Sampler>& sampler, const MidiMessage *s
   return cycle_count / getCpuFrequencyMhz();
 }
 
-void setup()
+static void setup_impl()
 {
   M5.begin();
   {
@@ -249,7 +261,7 @@ void setup()
   M5.Display.println("");
 }
 
-void loop()
+static void loop_impl()
 {
   M5.update();
   auto touch = M5.Touch.getDetail();
@@ -298,3 +310,15 @@ void loop()
   }
   M5.delay(16);
 }
+
+#if defined(ARDUINO) || defined(M5UNIFIED_PC_BUILD)
+void setup() { setup_impl(); }
+void loop() { loop_impl(); }
+#else
+extern "C" void app_main() {
+  setup_impl();
+  for (;;) {
+    loop_impl();
+  }
+}
+#endif
