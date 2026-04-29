@@ -39,14 +39,14 @@ void Sampler::InitializeMutexes() {
 
 #include <optional>
 
-std::optional<std::reference_wrapper<const Sample>> Timbre::GetAppropriateSample(uint8_t noteNo, uint8_t velocity)
+std::shared_ptr<const Sample> Timbre::GetAppropriateSample(uint8_t noteNo, uint8_t velocity)
 {
     for (const auto& ms : *samples)
     {
         if (ms->lowerNoteNo <= noteNo && noteNo <= ms->upperNoteNo && ms->lowerVelocity <= velocity && velocity <= ms->upperVelocity)
-            return std::cref(*ms->sample);
+            return ms->sample;
     }
-    return std::nullopt;
+    return nullptr;
 }
 
 void Sampler::SetTimbre(uint8_t channel, shared_ptr<Timbre> t)
@@ -55,7 +55,14 @@ void Sampler::SetTimbre(uint8_t channel, shared_ptr<Timbre> t)
 }
 void Sampler::Channel::SetTimbre(shared_ptr<Timbre> t)
 {
-    timbre = t;
+    auto samplerPtr = sampler.lock();
+    if (samplerPtr) {
+        ENTER_CRITICAL_SEMAPHORE(samplerPtr->playersMutex);
+        timbre = t;
+        EXIT_CRITICAL_SEMAPHORE(samplerPtr->playersMutex);
+    } else {
+        timbre = t;
+    }
 }
 
 void Sampler::NoteOn(uint8_t noteNo, uint8_t velocity, uint8_t channel)
@@ -169,16 +176,16 @@ void Sampler::Channel::PitchBend(int16_t b)
 
 void Sampler::SamplePlayer::UpdatePitch()
 {
-    if (!sample.has_value()) return;
-    
-    float delta = noteNo - sample.value().get().root + pitchBend;
+    if (!sample) return;
+
+    float delta = noteNo - sample->root + pitchBend;
     pitch = ((powf(2.0f, delta / 12.0f)));
 }
 void Sampler::SamplePlayer::UpdateGain()
 {
-    if (!sample.has_value()) return;
+    if (!sample) return;
 
-    const Sample& sampleRef = sample.value().get();
+    const Sample& sampleRef = *sample;
 
     if (!sampleRef.adsrEnabled)
     {
@@ -322,8 +329,8 @@ void Sampler::Process(int16_t* __restrict__ output)
 
         for (uint_fast8_t j = 0; j < SAMPLE_BUFFER_SIZE / ADSR_UPDATE_SAMPLE_COUNT; j++)
         {
-            if (!player->sample.has_value()) break;
-            const Sample &sample = player->sample.value();
+            if (!player->sample) break;
+            const Sample &sample = *player->sample;
             if (sample.adsrEnabled)
                 player->UpdateGain();
             if (player->playing == false)
