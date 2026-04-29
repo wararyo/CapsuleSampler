@@ -110,9 +110,9 @@ namespace sampler
                 samples->push_back(std::make_unique<MappedSample>(std::move(ms)));
             }
         }
-        // 指定したノートナンバーとベロシティが範囲に含まれているサンプルへの参照を返す
-        // 該当するサンプルがない場合はnulloptを返す
-        std::optional<std::reference_wrapper<const Sample>> GetAppropriateSample(uint8_t noteNo, uint8_t velocity);
+        // 指定したノートナンバーとベロシティが範囲に含まれているサンプルへのshared_ptrを返す
+        // 該当するサンプルがない場合はnullptrを返す
+        std::shared_ptr<const Sample> GetAppropriateSample(uint8_t noteNo, uint8_t velocity);
 
     private:
         // サンプルの集合
@@ -130,14 +130,14 @@ namespace sampler
         class SamplePlayer
         {
         public:
-            SamplePlayer(std::optional<std::reference_wrapper<const Sample>> sample, uint8_t noteNo, float volume, float pitchBend, uint8_t channel)
+            SamplePlayer(std::shared_ptr<const Sample> sample, uint8_t noteNo, float volume, float pitchBend, uint8_t channel)
                 : sample{std::move(sample)}, noteNo{noteNo}, volume{volume}, pitchBend{pitchBend}, channel{channel}, createdAt{sampler::micros()}
             {
                 UpdatePitch();
                 gain = volume;
             }
-            SamplePlayer() : sample{std::nullopt}, noteNo{60}, volume{1.0f}, channel{0}, createdAt{sampler::micros()}, playing{false} {}
-            std::optional<std::reference_wrapper<const Sample>> sample;
+            SamplePlayer() : sample{nullptr}, noteNo{60}, volume{1.0f}, channel{0}, createdAt{sampler::micros()}, playing{false} {}
+            std::shared_ptr<const Sample> sample;
             uint8_t noteNo;
             float volume;
             float pitchBend = 0;
