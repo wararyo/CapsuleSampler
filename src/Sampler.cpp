@@ -55,7 +55,14 @@ void Sampler::SetTimbre(uint8_t channel, shared_ptr<Timbre> t)
 }
 void Sampler::Channel::SetTimbre(shared_ptr<Timbre> t)
 {
-    timbre = t;
+    auto samplerPtr = sampler.lock();
+    if (samplerPtr) {
+        ENTER_CRITICAL_SEMAPHORE(samplerPtr->playersMutex);
+        timbre = t;
+        EXIT_CRITICAL_SEMAPHORE(samplerPtr->playersMutex);
+    } else {
+        timbre = t;
+    }
 }
 
 void Sampler::NoteOn(uint8_t noteNo, uint8_t velocity, uint8_t channel)
