@@ -1,8 +1,10 @@
 #include "Sampler.h"
 
 #include <algorithm>
+#include <cstring>
 #include <Tables.h>
 #include "Utils.h"
+#include "SvfFilter.h"
 
 #if defined(FREERTOS)
 // 長い処理ではセマフォを使用し、短い処理ではスピンロックを使用する
@@ -228,6 +230,43 @@ void Sampler::SamplePlayer::UpdateGain()
         break;
     }
 }
+void Sampler::SamplePlayer::UpdateFilterEnv()
+{
+    if (!sample) return;
+    const Sample &s = *sample;
+    if (!s.filterEnabled) return;
+
+    if (released) filterAdsrState = release;
+
+    switch (filterAdsrState)
+    {
+    case attack:
+        filterEnv += s.filterAttack;
+        if (filterEnv >= 1.0f)
+        {
+            filterEnv = 1.0f;
+            filterAdsrState = decay;
+        }
+        break;
+    case decay:
+    {
+        float goal = s.filterSustain;
+        filterEnv = (filterEnv - goal) * s.filterDecay + goal;
+        if ((filterEnv - goal) < 0.001f)
+        {
+            filterEnv = goal;
+            filterAdsrState = sustain;
+        }
+        break;
+    }
+    case sustain:
+        break;
+    case release:
+        filterEnv *= s.filterRelease;
+        if (filterEnv < 0.001f) filterEnv = 0.0f;
+        break;
+    }
+}
 
 // sampler_process_inner の動作時に必要なデータ類をまとめた構造体
 // アセンブリ言語からアクセスするのでメンバの順序を変えないこと
@@ -319,7 +358,9 @@ void Sampler::Process(int16_t* __restrict__ output)
 
     // 波形を生成
     float data[SAMPLE_BUFFER_SIZE] __attribute__ ((aligned (16))) = {0.0f};
-    
+    // フィルター有効ボイス用のスクラッチバッファ (64サンプル)
+    float scratch[ADSR_UPDATE_SAMPLE_COUNT] __attribute__ ((aligned (16)));
+
     ENTER_CRITICAL_SEMAPHORE(playersMutex);
     for (uint_fast8_t i = 0; i < MAX_SOUND; i++)
     {
@@ -333,20 +374,47 @@ void Sampler::Process(int16_t* __restrict__ output)
             const Sample &sample = *player->sample;
             if (sample.adsrEnabled)
                 player->UpdateGain();
+            if (sample.filterEnabled)
+                player->UpdateFilterEnv();
             if (player->playing == false)
                 break;
 
             float pitch = player->pitch;
             float gain = player->gain;
 
-            // gainにマスターボリュームを適用しておく
-            // 後処理で float から int16_t への変換時処理を行う際の高速化の都合で、事前に 65536倍しておく
-            gain *= masterVolume * 65536;
-
             auto src = sample.sample.get();
-            sampler_process_inner_work_t work = {&src[player->pos], &data[j * ADSR_UPDATE_SAMPLE_COUNT], player->pos_f, gain, pitch};
-            // 波形生成処理を行う
-            sampler_process_inner(&work, ADSR_UPDATE_SAMPLE_COUNT);
+            sampler_process_inner_work_t work;
+
+            if (!sample.filterEnabled)
+            {
+                // フィルター無効時はdata[]に直接加算(これによりパフォーマンス向上を狙う)
+                // gainにマスターボリュームを適用しておく
+                // 後処理で float から int16_t への変換時処理を行う際の高速化の都合で、事前に 65536倍しておく
+                float gs = gain * masterVolume * 65536.0f;
+                work = {&src[player->pos], &data[j * ADSR_UPDATE_SAMPLE_COUNT], player->pos_f, gs, pitch};
+                sampler_process_inner(&work, ADSR_UPDATE_SAMPLE_COUNT);
+            }
+            else
+            {
+                // フィルター有効時はdataとは別で保持してからフィルタ処理→data[]へ加算
+                // 既存の inner_loop は加算動作なので、scratch を 0 クリアしてから gain=1.0 で書き込ませる
+                std::memset(scratch, 0, sizeof(scratch));
+                work = {&src[player->pos], scratch, player->pos_f, 1.0f, pitch};
+                sampler_process_inner(&work, ADSR_UPDATE_SAMPLE_COUNT);
+
+                // SVF 係数を再計算 (64サンプル毎)
+                svf_coeffs_t coeffs;
+                float cent = sample.filterCutoffCent + sample.filterEnvAmount * player->filterEnv;
+                svf_setup_from_cent(&coeffs, cent, sample.filterResonance);
+                svf_process_lp_block(scratch, scratch, ADSR_UPDATE_SAMPLE_COUNT,
+                                     &player->ic1eq, &player->ic2eq, &coeffs);
+
+                // gain × masterVolume × 65536 を掛けて data[] に加算
+                float gs = gain * masterVolume * 65536.0f;
+                float *dst = &data[j * ADSR_UPDATE_SAMPLE_COUNT];
+                for (uint_fast8_t k = 0; k < ADSR_UPDATE_SAMPLE_COUNT; ++k)
+                    dst[k] += scratch[k] * gs;
+            }
 
             int32_t loopEnd = sample.length;
             int32_t loopBack = 0;

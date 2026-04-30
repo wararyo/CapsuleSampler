@@ -56,7 +56,23 @@ namespace sampler
         float decay;
         float sustain;
         float release;
-    
+
+        // ===== ノート単位のSVFローパスフィルター =====
+        // filterEnabled = false の場合、フィルター経路はスキップされ
+        // 既存の波形生成パス(asm版含む)がそのまま使われる
+        bool  filterEnabled    = false;
+        // SoundFont 2 absolute cent (1200·log2(fc/8.176Hz))
+        // 13500 cent ≈ 19.9kHz でほぼ素通しに相当
+        float filterCutoffCent = 13500.0f;
+        float filterResonance  = 0.707f;   // Q値 (k = 1/Q)
+        // フィルターADSRエンベロープ(0..1)に乗算するcent変調量。正値前提
+        float filterEnvAmount  = 0.0f;
+        // フィルターADSR (振幅ADSRと同じスケール)
+        float filterAttack  = 1.0f;
+        float filterDecay   = 1.0f;
+        float filterSustain = 1.0f;
+        float filterRelease = 1.0f;
+
         // 通常はこちらのコンストラクタを使用してください
         Sample(std::unique_ptr<const int16_t> sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd, bool adsrEnabled, float attack, float decay, float sustain, float release)
             : sample{std::move(sample)}, length{length}, root{root}, loopStart{loopStart}, loopEnd{loopEnd}, adsrEnabled{adsrEnabled}, attack{attack}, decay{decay}, sustain{sustain}, release{release} {}
@@ -64,7 +80,31 @@ namespace sampler
         // データが解放されないことが保証されている場合にのみ使用してください
         Sample(const int16_t *sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd, bool adsrEnabled, float attack, float decay, float sustain, float release)
             : sample{sample}, length{length}, root{root}, loopStart{loopStart}, loopEnd{loopEnd}, adsrEnabled{adsrEnabled}, attack{attack}, decay{decay}, sustain{sustain}, release{release} {}
-        Sample(Sample&& other) : sample{std::move(other.sample)}, length{other.length}, root{other.root}, loopStart{other.loopStart}, loopEnd{other.loopEnd}, adsrEnabled{other.adsrEnabled}, attack{other.attack}, decay{other.decay}, sustain{other.sustain}, release{other.release} {}
+        // フィルター付きコンストラクタ (unique_ptr版)
+        Sample(std::unique_ptr<const int16_t> sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd,
+               bool adsrEnabled, float attack, float decay, float sustain, float release,
+               bool filterEnabled,
+               float filterCutoffCent, float filterResonance, float filterEnvAmount,
+               float filterAttack, float filterDecay, float filterSustain, float filterRelease)
+            : sample{std::move(sample)}, length{length}, root{root}, loopStart{loopStart}, loopEnd{loopEnd},
+              adsrEnabled{adsrEnabled}, attack{attack}, decay{decay}, sustain{sustain}, release{release},
+              filterEnabled{filterEnabled}, filterCutoffCent{filterCutoffCent}, filterResonance{filterResonance}, filterEnvAmount{filterEnvAmount},
+              filterAttack{filterAttack}, filterDecay{filterDecay}, filterSustain{filterSustain}, filterRelease{filterRelease} {}
+        // フィルター付きコンストラクタ (生ポインタ版)
+        Sample(const int16_t *sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd,
+               bool adsrEnabled, float attack, float decay, float sustain, float release,
+               bool filterEnabled,
+               float filterCutoffCent, float filterResonance, float filterEnvAmount,
+               float filterAttack, float filterDecay, float filterSustain, float filterRelease)
+            : sample{sample}, length{length}, root{root}, loopStart{loopStart}, loopEnd{loopEnd},
+              adsrEnabled{adsrEnabled}, attack{attack}, decay{decay}, sustain{sustain}, release{release},
+              filterEnabled{filterEnabled}, filterCutoffCent{filterCutoffCent}, filterResonance{filterResonance}, filterEnvAmount{filterEnvAmount},
+              filterAttack{filterAttack}, filterDecay{filterDecay}, filterSustain{filterSustain}, filterRelease{filterRelease} {}
+        Sample(Sample&& other)
+            : sample{std::move(other.sample)}, length{other.length}, root{other.root}, loopStart{other.loopStart}, loopEnd{other.loopEnd},
+              adsrEnabled{other.adsrEnabled}, attack{other.attack}, decay{other.decay}, sustain{other.sustain}, release{other.release},
+              filterEnabled{other.filterEnabled}, filterCutoffCent{other.filterCutoffCent}, filterResonance{other.filterResonance}, filterEnvAmount{other.filterEnvAmount},
+              filterAttack{other.filterAttack}, filterDecay{other.filterDecay}, filterSustain{other.filterSustain}, filterRelease{other.filterRelease} {}
     };
 
     // MIDI規格のプログラムに対応する概念
@@ -152,8 +192,16 @@ namespace sampler
             float pitch = 1.0f; // noteNoとpitchBendにより算出される値
             enum SampleAdsr adsrState = SampleAdsr::attack;
 
+            // SVF 内部状態 (積分器メモリ)
+            float ic1eq = 0.0f;
+            float ic2eq = 0.0f;
+            // フィルターADSRエンベロープ (0..1)
+            float filterEnv = 0.0f;
+            enum SampleAdsr filterAdsrState = SampleAdsr::attack;
+
             void UpdateGain();
             void UpdatePitch();
+            void UpdateFilterEnv();
         private:
         };
 
