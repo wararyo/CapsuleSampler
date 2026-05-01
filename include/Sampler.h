@@ -45,7 +45,7 @@ namespace sampler
 
     struct Sample
     {
-        std::unique_ptr<const int16_t> sample;
+        std::shared_ptr<const int16_t> sample;
         uint32_t length;
         uint8_t root;
         uint32_t loopStart;
@@ -74,14 +74,14 @@ namespace sampler
         float filterRelease = 1.0f;
 
         // 通常はこちらのコンストラクタを使用してください
-        Sample(std::unique_ptr<const int16_t> sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd, bool adsrEnabled, float attack, float decay, float sustain, float release)
+        Sample(std::shared_ptr<const int16_t> sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd, bool adsrEnabled, float attack, float decay, float sustain, float release)
             : sample{std::move(sample)}, length{length}, root{root}, loopStart{loopStart}, loopEnd{loopEnd}, adsrEnabled{adsrEnabled}, attack{attack}, decay{decay}, sustain{sustain}, release{release} {}
         // このコンストラクタを使用することで簡潔な初期化が可能です
         // データが解放されないことが保証されている場合にのみ使用してください
         Sample(const int16_t *sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd, bool adsrEnabled, float attack, float decay, float sustain, float release)
             : sample{sample}, length{length}, root{root}, loopStart{loopStart}, loopEnd{loopEnd}, adsrEnabled{adsrEnabled}, attack{attack}, decay{decay}, sustain{sustain}, release{release} {}
-        // フィルター付きコンストラクタ (unique_ptr版)
-        Sample(std::unique_ptr<const int16_t> sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd,
+        // フィルター付きコンストラクタ (shared_ptr版)
+        Sample(std::shared_ptr<const int16_t> sample, uint32_t length, uint8_t root, uint32_t loopStart, uint32_t loopEnd,
                bool adsrEnabled, float attack, float decay, float sustain, float release,
                bool filterEnabled,
                float filterCutoffCent, float filterResonance, float filterEnvAmount,
@@ -174,7 +174,32 @@ namespace sampler
                 : sample{std::move(sample)}, noteNo{noteNo}, volume{volume}, pitchBend{pitchBend}, channel{channel}, createdAt{sampler::micros()}
             {
                 UpdatePitch();
-                gain = volume;
+                // 振幅ADSRとフィルタADSRは同じ設計でプリシードする:
+                //  - ADSR無効: 即座にピーク値で固定 (UpdateGainは呼ばれないため初期値で確定する)
+                //  - attack >= 1.0 (即時アタック): ピーク値+decay状態でシード。NoteOn直後にNoteOffされても
+                //    ピーク値から自然に減衰する。
+                //  - それ以外 (スローアタック): 0+attack状態で開始し、UpdateGain/UpdateFilterEnv内で
+                //    本来のランプ処理に任せる。NoteOn直後にNoteOffされた場合は0からreleaseするので
+                //    実質的にほぼ無音になるが、これは「アタック完了前に離鍵された」という挙動として妥当。
+                if (!this->sample || !this->sample->adsrEnabled)
+                {
+                    gain = volume;
+                }
+                else if (this->sample->attack >= 1.0f)
+                {
+                    gain = volume;
+                    adsrState = decay;
+                }
+                else
+                {
+                    gain = 0.0f;
+                    // adsrState はメンバ初期値の attack のまま
+                }
+                if (this->sample && this->sample->filterEnabled && this->sample->filterAttack >= 1.0f)
+                {
+                    filterEnv = 1.0f;
+                    filterAdsrState = decay;
+                }
             }
             SamplePlayer() : sample{nullptr}, noteNo{60}, volume{1.0f}, channel{0}, createdAt{sampler::micros()}, playing{false} {}
             std::shared_ptr<const Sample> sample;
